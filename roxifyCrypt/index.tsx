@@ -125,12 +125,8 @@ const settings = definePluginSettings({
 });
 
 const HIDE_CSS = `
-html.roxcrypt-clean img[src*="/rox_"],
-html.roxcrypt-clean img[src*="/roxhs_"] { display: none !important; }
-html.roxcrypt-clean [class*="messageAttachment"]:has(img[src*="/rox_"]),
-html.roxcrypt-clean [class*="messageAttachment"]:has(img[src*="/roxhs_"]),
-html.roxcrypt-clean [class*="imageContainer"]:has(img[src*="/rox_"]),
-html.roxcrypt-clean [class*="imageContainer"]:has(img[src*="/roxhs_"]) { display: none !important; }
+html.roxcrypt-clean img[src*="/rox"] { display: none !important; }
+html.roxcrypt-clean :is([class*="messageAttachment"], [class*="imageContainer"], [class*="imageWrapper"], [class*="mosaicItem"], [class*="attachmentContainer"], [class*="mediaAttachmentsContainer"], [class*="mosaic"], [class*="clickableWrapper"], [class*="embedWrapper"]):has(img[src*="/rox"]) { display: none !important; margin: 0 !important; }
 `;
 let styleEl: HTMLStyleElement | null = null;
 function installStyle() {
