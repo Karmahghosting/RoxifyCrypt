@@ -126,7 +126,7 @@ const settings = definePluginSettings({
 
 const HIDE_CSS = `
 html.roxcrypt-clean img[src*="/rox"] { display: none !important; }
-html.roxcrypt-clean :is([class*="messageAttachment"], [class*="imageContainer"], [class*="imageWrapper"], [class*="mosaicItem"], [class*="attachmentContainer"], [class*="mediaAttachmentsContainer"], [class*="mosaic"], [class*="clickableWrapper"], [class*="embedWrapper"]):has(img[src*="/rox"]) { display: none !important; margin: 0 !important; }
+html.roxcrypt-clean :is([class*="attachment"], [class*="imageContainer"], [class*="imageWrapper"], [class*="mosaicItem"], [class*="mediaAttachmentsContainer"], [class*="mosaic"], [class*="clickableWrapper"], [class*="embedWrapper"], [class*="visualMediaItem"], [class*="gridContainer"]):has(img[src*="/rox"]) { display: none !important; margin: 0 !important; padding: 0 !important; min-height: 0 !important; border: 0 !important; }
 `;
 let styleEl: HTMLStyleElement | null = null;
 function installStyle() {
@@ -156,8 +156,9 @@ function showOptimistic(channelId: string, text: string): string | undefined {
         const nonce = SnowflakeUtils.fromTimestamp(Date.now());
         const id = "-" + nonce;
         const base = createBotMessage({ channelId, content: text, embeds: [] });
-        const msg: any = mergeDefaults({ id, content: text, nonce, state: "SENDING", channel_id: channelId } as any, base as any);
+        const msg: any = mergeDefaults({ id, content: text, nonce, state: "SENDING", channel_id: channelId, flags: 0, mentioned: false, mentions: [], mention_roles: [], mention_everyone: false } as any, base as any);
         msg.author = me;
+        msg.flags = 0;
         MessageActions.receiveMessage(channelId, msg);
         optimisticByNonce.set(nonce, { channelId, id });
         return nonce;
