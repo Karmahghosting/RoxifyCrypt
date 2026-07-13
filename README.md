@@ -1,6 +1,7 @@
 # RoxifyCrypt
 > Vous aimez ? Laissez une star au repo, en plus; c'est français hehehe
-Plugin Vencord qui chiffre **automatiquement** tes messages et fichiers Discord dans une image « roxify » (AES‑256), et les affiche déchiffrés en face. L'échange de clés est **automatique** (ECDH) : rien à configurer, aucun secret à s'envoyer.
+
+**Plugin Vencord qui chiffre **automatiquement** tes messages et fichiers Discord dans une image « roxify » (AES‑256), et les affiche déchiffrés en face. L'échange de clés est **automatique** (ECDH) : rien à configurer, aucun secret à s'envoyer.
 
 > ⚠️ Les **deux** personnes doivent avoir le plugin. Sinon l'autre ne voit qu'une petite image illisible.
 
