@@ -124,25 +124,31 @@ const settings = definePluginSettings({
     },
 });
 
+const HIDE_SELECTORS = "[class*=\"attachment\"], [class*=\"imageContainer\"], [class*=\"imageWrapper\"], [class*=\"mosaicItem\"], [class*=\"mediaAttachmentsContainer\"], [class*=\"mosaic\"], [class*=\"clickableWrapper\"], [class*=\"embedWrapper\"], [class*=\"visualMediaItem\"], [class*=\"gridContainer\"]";
 const HIDE_CSS = `
-html.roxcrypt-clean img[src*="/rox"] { display: none !important; }
-html.roxcrypt-clean :is([class*="attachment"], [class*="imageContainer"], [class*="imageWrapper"], [class*="mosaicItem"], [class*="mediaAttachmentsContainer"], [class*="mosaic"], [class*="clickableWrapper"], [class*="embedWrapper"], [class*="visualMediaItem"], [class*="gridContainer"]):has(img[src*="/rox"]) { display: none !important; margin: 0 !important; padding: 0 !important; min-height: 0 !important; border: 0 !important; }
+img[src*="/rox"] { display: none !important; }
+:is(${HIDE_SELECTORS}):has(img[src*="/rox"]),
+:is(${HIDE_SELECTORS}):has(a[href*="/rox"]) { display: none !important; margin: 0 !important; padding: 0 !important; min-height: 0 !important; border: 0 !important; }
 `;
 let styleEl: HTMLStyleElement | null = null;
+let lastMode: string | undefined;
 function installStyle() {
     if (styleEl || typeof document === "undefined") return;
     styleEl = document.createElement("style");
     styleEl.id = "roxifycrypt-style";
-    styleEl.textContent = HIDE_CSS;
     document.head.appendChild(styleEl);
 }
 function removeStyle() {
     styleEl?.remove();
     styleEl = null;
-    document.documentElement.classList.remove("roxcrypt-clean");
+    lastMode = undefined;
 }
 function applyDisplayMode() {
-    document.documentElement.classList.toggle("roxcrypt-clean", settings.store.displayMode === "clean");
+    if (!styleEl) return;
+    const mode = settings.store.displayMode;
+    if (mode === lastMode) return;
+    lastMode = mode;
+    styleEl.textContent = mode === "clean" ? HIDE_CSS : "";
 }
 
 const createBotMessage = findByCodeLazy("username:\"Clyde\"");
