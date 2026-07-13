@@ -59,8 +59,15 @@ Le **tout premier** message à quelqu'un déclenche l'échange de clés (une seu
 | Commande | Effet |
 |---|---|
 | `/roxid` | Affiche les empreintes à comparer hors Discord (pour vérifier qu'il n'y a pas d'espion). |
+| `/roxon` | Active le chiffrement dans CE salon (utile sur un serveur). |
 | `/roxplain` | Envoie en clair dans ce salon (si l'autre n'a pas le plugin). |
 | `/roxkey-show` | Explique quelle clé est active ici. |
+
+### Sur un serveur (beaucoup de monde)
+
+En MP, chaque conversation est chiffrée de bout en bout par ECDH (vraie sécurité). Sur un **serveur**, l'ECDH ne marche pas (impossible d'échanger une clé avec des centaines de gens). Fais **`/roxon`** dans le salon voulu : les messages y partent chiffrés et **tout le monde qui a le plugin les lit automatiquement**, zéro config.
+
+> ⚠️ Sur un serveur, c'est de l'**obfuscation**, pas une vraie confidentialité : la clé est dérivée du salon, donc n'importe qui ayant le plugin dans ce salon peut lire. Ça cache le contenu à Discord et aux gens sans le plugin, rien de plus. Pour de la vraie confidentialité à plusieurs, mets un `masterSecret` partagé (les réglages) que seuls tes membres connaissent.
 
 ## Sécurité (l'essentiel)
 

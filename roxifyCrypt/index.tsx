@@ -184,11 +184,13 @@ const KEYS_KEY = "RoxifyCrypt_channelKeys";
 const IDENTITY_KEY = "RoxifyCrypt_identity";
 const PEERS_KEY = "RoxifyCrypt_peers";
 const PLAIN_KEY = "RoxifyCrypt_plainChannels";
+const ENCRYPT_KEY = "RoxifyCrypt_encryptChannels";
 const PENDING_HS_KEY = "RoxifyCrypt_pendingHandshakes";
 
 const channelKeys = new Map<string, string>();
 const peerKeys = new Map<string, string>();
 const plainChannels = new Set<string>();
+const encryptChannels = new Set<string>();
 const pendingHs = new Map<string, string>();
 const lastHsAt = new Map<string, number>();
 const secretCache = new Map<string, string>();
@@ -203,19 +205,22 @@ function bumpEpoch() {
 }
 
 async function loadState() {
-    const [keys, peers, plain, hs] = await Promise.all([
+    const [keys, peers, plain, enc, hs] = await Promise.all([
         DataStore.get(KEYS_KEY) as Promise<Record<string, string> | undefined>,
         DataStore.get(PEERS_KEY) as Promise<Record<string, string> | undefined>,
         DataStore.get(PLAIN_KEY) as Promise<string[] | undefined>,
+        DataStore.get(ENCRYPT_KEY) as Promise<string[] | undefined>,
         DataStore.get(PENDING_HS_KEY) as Promise<Record<string, string> | undefined>,
     ]);
     channelKeys.clear();
     peerKeys.clear();
     plainChannels.clear();
+    encryptChannels.clear();
     pendingHs.clear();
     if (keys) for (const [k, v] of Object.entries(keys)) channelKeys.set(k, v);
     if (peers) for (const [k, v] of Object.entries(peers)) peerKeys.set(k, v);
     if (plain) for (const c of plain) plainChannels.add(c);
+    if (enc) for (const c of enc) encryptChannels.add(c);
     if (hs) for (const [k, v] of Object.entries(hs)) pendingHs.set(k, v);
 }
 
@@ -227,6 +232,9 @@ async function persistPeers() {
 }
 async function persistPlain() {
     await DataStore.set(PLAIN_KEY, [...plainChannels]);
+}
+async function persistEncrypt() {
+    await DataStore.set(ENCRYPT_KEY, [...encryptChannels]);
 }
 async function persistPendingHs() {
     await DataStore.set(PENDING_HS_KEY, Object.fromEntries(pendingHs));
@@ -350,6 +358,8 @@ async function resolveKey(channelId: string): Promise<string | null> {
                 return null;
             }
         }
+        const secret = settings.store.masterSecret?.trim();
+        return secret ? `${secret}|${channelId}` : (channelId ? btoa(channelId) : null);
     }
 
     return deriveFromSecret(channelId);
@@ -850,12 +860,29 @@ export default definePlugin({
                 const channelId = ctx.channel.id;
                 const on = plainChannels.has(channelId);
                 if (on) plainChannels.delete(channelId);
-                else plainChannels.add(channelId);
-                await persistPlain();
+                else { plainChannels.add(channelId); encryptChannels.delete(channelId); }
+                await Promise.all([persistPlain(), persistEncrypt()]);
+                bumpEpoch();
                 sendBotMessage(channelId, {
                     content: on
                         ? "🔐 Chiffrement RoxifyCrypt réactivé dans ce salon."
                         : "📢 Ce salon envoie désormais **en clair**. Refais `/roxplain` pour rechiffrer.",
+                });
+            },
+        },
+        {
+            name: "roxon",
+            description: "Active le chiffrement automatique dans CE salon, même sur un serveur (obfuscation : tout le monde avec le plugin lit)",
+            inputType: ApplicationCommandInputType.BUILT_IN,
+            options: [],
+            execute: async (_args, ctx) => {
+                const channelId = ctx.channel.id;
+                plainChannels.delete(channelId);
+                encryptChannels.add(channelId);
+                await Promise.all([persistPlain(), persistEncrypt()]);
+                bumpEpoch();
+                sendBotMessage(channelId, {
+                    content: "🔐 Chiffrement activé dans ce salon. Toute personne ayant RoxifyCrypt y lira les messages.\n⚠️ **Obfuscation** : ça cache le contenu à Discord et aux gens sans le plugin, mais ce n'est PAS une vraie confidentialité (le plugin est public). `/roxplain` pour repasser en clair.",
                 });
             },
         },
@@ -899,7 +926,7 @@ export default definePlugin({
     async onBeforeMessageSend(channelId: string, message: { content: string; }) {
         if (!settings.store.autoEncrypt) return;
         if (plainChannels.has(channelId)) return;
-        if (!channelKeys.has(channelId) && !channelAllowed(channelId)) return;
+        if (!channelKeys.has(channelId) && !encryptChannels.has(channelId) && !channelAllowed(channelId)) return;
 
         const key = await resolveKey(channelId);
 
