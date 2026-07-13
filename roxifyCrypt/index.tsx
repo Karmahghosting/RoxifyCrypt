@@ -118,7 +118,7 @@ const settings = definePluginSettings({
     },
     optimisticSending: {
         type: OptionType.BOOLEAN,
-        description: "Afficher tout de suite un aperçu grisé de ton message pendant le chiffrement (non verrouillé), remplacé par le vrai à l'envoi.",
+        description: "Afficher tout de suite ton message en gris (« en cours d'envoi »), comme Discord, pendant le chiffrement.",
         default: true,
         restartNeeded: false,
     },
@@ -133,26 +133,16 @@ html.roxcrypt-clean [class*="imageContainer"]:has(img[src*="/rox_"]),
 html.roxcrypt-clean [class*="imageContainer"]:has(img[src*="/roxhs_"]) { display: none !important; }
 `;
 let styleEl: HTMLStyleElement | null = null;
-let optStyleEl: HTMLStyleElement | null = null;
 function installStyle() {
-    if (typeof document === "undefined") return;
-    if (!styleEl) {
-        styleEl = document.createElement("style");
-        styleEl.id = "roxifycrypt-style";
-        styleEl.textContent = HIDE_CSS;
-        document.head.appendChild(styleEl);
-    }
-    if (!optStyleEl) {
-        optStyleEl = document.createElement("style");
-        optStyleEl.id = "roxifycrypt-optimistic";
-        document.head.appendChild(optStyleEl);
-    }
+    if (styleEl || typeof document === "undefined") return;
+    styleEl = document.createElement("style");
+    styleEl.id = "roxifycrypt-style";
+    styleEl.textContent = HIDE_CSS;
+    document.head.appendChild(styleEl);
 }
 function removeStyle() {
     styleEl?.remove();
     styleEl = null;
-    optStyleEl?.remove();
-    optStyleEl = null;
     document.documentElement.classList.remove("roxcrypt-clean");
 }
 function applyDisplayMode() {
@@ -162,13 +152,6 @@ function applyDisplayMode() {
 const createBotMessage = findByCodeLazy("username:\"Clyde\"");
 const optimisticByNonce = new Map<string, { channelId: string; id: string; }>();
 
-function refreshOptimisticStyle() {
-    if (!optStyleEl) return;
-    optStyleEl.textContent = [...optimisticByNonce.values()]
-        .map(o => `[id*="${o.id}"] { opacity: .5 !important; }`)
-        .join("\n");
-}
-
 function showOptimistic(channelId: string, text: string): string | undefined {
     if (!settings.store.optimisticSending) return undefined;
     try {
@@ -177,11 +160,10 @@ function showOptimistic(channelId: string, text: string): string | undefined {
         const nonce = SnowflakeUtils.fromTimestamp(Date.now());
         const id = "-" + nonce;
         const base = createBotMessage({ channelId, content: text, embeds: [] });
-        const msg: any = mergeDefaults({ id, content: text, nonce, channel_id: channelId } as any, base as any);
+        const msg: any = mergeDefaults({ id, content: text, nonce, state: "SENDING", channel_id: channelId } as any, base as any);
         msg.author = me;
         MessageActions.receiveMessage(channelId, msg);
         optimisticByNonce.set(nonce, { channelId, id });
-        refreshOptimisticStyle();
         return nonce;
     } catch (e) {
         console.error("[RoxifyCrypt] message optimiste échoué:", e);
@@ -194,7 +176,6 @@ function clearOptimistic(nonce?: string) {
     const o = optimisticByNonce.get(nonce);
     if (!o) return;
     optimisticByNonce.delete(nonce);
-    refreshOptimisticStyle();
     try {
         FluxDispatcher.dispatch({ type: "MESSAGE_DELETE", channelId: o.channelId, id: o.id });
     } catch (e) {
