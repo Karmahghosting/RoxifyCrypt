@@ -7,9 +7,10 @@
 import { ApplicationCommandInputType, ApplicationCommandOptionType, findOption, sendBotMessage } from "@api/Commands";
 import * as DataStore from "@api/DataStore";
 import { definePluginSettings } from "@api/Settings";
+import { mergeDefaults } from "@utils/mergeDefaults";
 import definePlugin, { OptionType, PluginNative } from "@utils/types";
-import { findByPropsLazy, findLazy } from "@webpack";
-import { ChannelStore, DraftType, MessageStore, Parser, React, RestAPI, showToast, SnowflakeUtils, Toasts, UploadManager, useEffect, UserStore, useState } from "@webpack/common";
+import { findByCodeLazy, findByPropsLazy, findLazy } from "@webpack";
+import { ChannelStore, DraftType, FluxDispatcher, MessageActions, MessageStore, Parser, React, RestAPI, showToast, SnowflakeUtils, Toasts, UploadManager, useEffect, UserStore, useState } from "@webpack/common";
 
 type RoxNative = PluginNative<typeof import("./native")>;
 function optionalNative(): RoxNative | undefined {
@@ -115,6 +116,12 @@ const settings = definePluginSettings({
         ],
         restartNeeded: false,
     },
+    optimisticSending: {
+        type: OptionType.BOOLEAN,
+        description: "Afficher tout de suite ton message en gris (« en cours d'envoi ») pendant le chiffrement, comme Discord.",
+        default: true,
+        restartNeeded: false,
+    },
 });
 
 const HIDE_CSS = `
@@ -140,6 +147,40 @@ function removeStyle() {
 }
 function applyDisplayMode() {
     document.documentElement.classList.toggle("roxcrypt-clean", settings.store.displayMode === "clean");
+}
+
+const createBotMessage = findByCodeLazy("username:\"Clyde\"");
+const optimisticByNonce = new Map<string, { channelId: string; id: string; }>();
+
+function showOptimistic(channelId: string, text: string): string | undefined {
+    if (!settings.store.optimisticSending) return undefined;
+    try {
+        const me = UserStore.getCurrentUser();
+        if (!me) return undefined;
+        const nonce = SnowflakeUtils.fromTimestamp(Date.now());
+        const id = "-" + nonce;
+        const base = createBotMessage({ channelId, content: text, embeds: [] });
+        const msg: any = mergeDefaults({ id, content: text, nonce, state: "SENDING", channel_id: channelId } as any, base as any);
+        msg.author = me;
+        MessageActions.receiveMessage(channelId, msg);
+        optimisticByNonce.set(nonce, { channelId, id });
+        return nonce;
+    } catch (e) {
+        console.error("[RoxifyCrypt] message optimiste échoué:", e);
+        return undefined;
+    }
+}
+
+function clearOptimistic(nonce?: string) {
+    if (!nonce) return;
+    const o = optimisticByNonce.get(nonce);
+    if (!o) return;
+    optimisticByNonce.delete(nonce);
+    try {
+        FluxDispatcher.dispatch({ type: "MESSAGE_DELETE", channelId: o.channelId, id: o.id });
+    } catch (e) {
+        console.error("[RoxifyCrypt] nettoyage optimiste échoué:", e);
+    }
 }
 
 const KEYS_KEY = "RoxifyCrypt_channelKeys";
@@ -364,12 +405,12 @@ function uploadImage(channelId: string, bytes: Uint8Array, name: string): Promis
     });
 }
 
-function postAttachment(channelId: string, filename: string, uploadedFilename: string) {
+function postAttachment(channelId: string, filename: string, uploadedFilename: string, nonce?: string) {
     return RestAPI.post({
         url: `/channels/${channelId}/messages`,
         body: {
             content: "",
-            nonce: SnowflakeUtils.fromTimestamp(Date.now()),
+            nonce: nonce ?? SnowflakeUtils.fromTimestamp(Date.now()),
             type: 0,
             attachments: [{ id: "0", filename, uploaded_filename: uploadedFilename }],
         },
@@ -385,14 +426,14 @@ async function payloadName(): Promise<string> {
     }
 }
 
-async function encryptAndSend(channelId: string, name: string, data: Uint8Array, key: string) {
+async function encryptAndSend(channelId: string, name: string, data: Uint8Array, key: string, nonce?: string) {
     const png = await getNative().encode(requirePath(), name, data, key);
     const { filename, uploadedFilename } = await uploadImage(channelId, png, await payloadName());
-    await postAttachment(channelId, filename, uploadedFilename);
+    await postAttachment(channelId, filename, uploadedFilename, nonce);
 }
 
-async function encryptAndSendText(channelId: string, text: string, key: string) {
-    await encryptAndSend(channelId, TEXT_NAME, new TextEncoder().encode(text), key);
+async function encryptAndSendText(channelId: string, text: string, key: string, nonce?: string) {
+    await encryptAndSend(channelId, TEXT_NAME, new TextEncoder().encode(text), key, nonce);
 }
 
 async function encryptAndSendFile(channelId: string, file: File, key: string) {
@@ -828,6 +869,7 @@ export default definePlugin({
             try {
                 const message = event?.message;
                 const channelId = event?.channelId ?? channelOf(message);
+                if (message?.nonce) clearOptimistic(String(message.nonce));
                 const author = authorOf(message);
                 const me = UserStore.getCurrentUser()?.id;
                 if (!message || !channelId || !author || !me || author === me) return;
@@ -923,7 +965,9 @@ export default definePlugin({
 
         const content = message.content?.trim();
         if (content) {
-            encryptAndSendText(channelId, content, key).catch(e => {
+            const nonce = showOptimistic(channelId, content);
+            encryptAndSendText(channelId, content, key, nonce).catch(e => {
+                clearOptimistic(nonce);
                 showToast("RoxifyCrypt : échec du chiffrement, message NON envoyé", Toasts.Type.FAILURE);
                 console.error("[RoxifyCrypt] text encrypt failed:", e);
             });
@@ -987,6 +1031,7 @@ export default definePlugin({
         secretCache.clear();
         epochListeners.clear();
         pendingByChannel.clear();
+        optimisticByNonce.clear();
         removeStyle();
     },
 });
