@@ -36,6 +36,11 @@ const MEDIA_VID_RE = /\.(mp4|webm|mov)(?:[?#]|$)/i;
 const MEDIA_HOST_RE = /^https?:\/\/(?:[a-z0-9-]+\.)*(?:media\d*\.tenor\.com|c\.tenor\.com|media\d*\.giphy\.com|cdn\.discordapp\.com|media\.discordapp\.net|i\.imgur\.com)\//i;
 const PAGE_HOST_RE = /^https?:\/\/(?:www\.)?(?:tenor\.com\/view\/|giphy\.com\/gifs\/|giphy\.com\/embed\/)/i;
 
+const C_TEXT = "var(--text-default, var(--text-normal, var(--header-primary, currentColor)))";
+const C_MUTED = "var(--text-muted, var(--text-tertiary, var(--text-secondary, currentColor)))";
+const C_LINK = "var(--text-link, var(--link, #00a8fc))";
+const C_DANGER = "var(--text-danger, var(--status-danger, #f23f43))";
+
 function singleUrl(text: string): string | null {
     const t = text.trim();
     return /^https?:\/\/\S+$/i.test(t) ? t : null;
@@ -628,7 +633,7 @@ function RoxAccessory({ message }: { message: any; }) {
 
     useEffect(() => { applyDisplayMode(); });
 
-    const box = (children: any, color = "var(--text-muted)") => (
+    const box = (children: any, color = C_MUTED) => (
         <div style={{ color, fontSize: "0.9rem", padding: "2px 0", display: "flex", gap: "6px", alignItems: "baseline" }}>
             {children}
         </div>
@@ -652,16 +657,16 @@ function RoxAccessory({ message }: { message: any; }) {
             const asUrl = singleUrl(state.text);
             if (asUrl && PAGE_HOST_RE.test(asUrl)) {
                 return clean
-                    ? <div style={{ padding: "2px 0" }}><a href={asUrl} style={{ color: "var(--text-link)" }}>{asUrl}</a></div>
-                    : box(<>🔓 <a href={asUrl} style={{ color: "var(--text-link)" }}>{asUrl}</a></>);
+                    ? <div style={{ padding: "2px 0" }}><a href={asUrl} style={{ color: C_LINK }}>{asUrl}</a></div>
+                    : box(<>🔓 <a href={asUrl} style={{ color: C_LINK }}>{asUrl}</a></>);
             }
             if (clean) {
-                return <div style={{ padding: "2px 0", color: "var(--text-normal)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{Parser.parse(state.text)}</div>;
+                return <div style={{ padding: "2px 0", color: C_TEXT, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{Parser.parse(state.text)}</div>;
             }
             return box(
                 <>
                     <span style={{ flex: "0 0 auto" }}>🔓</span>
-                    <span style={{ color: "var(--text-normal)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                    <span style={{ color: C_TEXT, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
                         {Parser.parse(state.text)}
                     </span>
                 </>,
@@ -676,11 +681,11 @@ function RoxAccessory({ message }: { message: any; }) {
                     </div>
                 )
                 : clean
-                    ? <div style={{ padding: "2px 0" }}><a href={url} download={state.name} style={{ color: "var(--text-link)" }}>📎 {state.name}</a></div>
+                    ? <div style={{ padding: "2px 0" }}><a href={url} download={state.name} style={{ color: C_LINK }}>📎 {state.name}</a></div>
                     : box(
                         <>
                             <span style={{ flex: "0 0 auto" }}>🔓📎</span>
-                            <a href={url} download={state.name} style={{ color: "var(--text-link)" }}>{state.name}</a>
+                            <a href={url} download={state.name} style={{ color: C_LINK }}>{state.name}</a>
                         </>,
                     );
         case "loading":
@@ -692,9 +697,9 @@ function RoxAccessory({ message }: { message: any; }) {
         case "noconfig":
             return box(<>🔒 message roxify chiffré : configure le chemin du module roxify dans les réglages du plugin</>);
         case "badkey":
-            return box(<>🔒 message roxify chiffré : clé incorrecte pour ce salon</>, "var(--text-danger)");
+            return box(<>🔒 message roxify chiffré : clé incorrecte pour ce salon</>, C_DANGER);
         case "error":
-            return box(<>⚠️ RoxifyCrypt : {state.error}</>, "var(--text-danger)");
+            return box(<>⚠️ RoxifyCrypt : {state.error}</>, C_DANGER);
         default:
             return null;
     }
