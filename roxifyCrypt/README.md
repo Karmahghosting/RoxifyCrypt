@@ -69,6 +69,14 @@ En MP, chaque conversation est chiffrée de bout en bout par ECDH (vraie sécuri
 
 > ⚠️ Sur un serveur, c'est de l'**obfuscation**, pas une vraie confidentialité : la clé est dérivée du salon, donc n'importe qui ayant le plugin dans ce salon peut lire. Ça cache le contenu à Discord et aux gens sans le plugin, rien de plus. Pour de la vraie confidentialité à plusieurs, mets un `masterSecret` partagé (les réglages) que seuls tes membres connaissent.
 
+## Mises à jour automatiques
+
+Une fois installé, le plugin se **met à jour tout seul** : au démarrage de Discord, il vérifie s'il existe une nouvelle version sur GitHub, la télécharge et la recompile, puis te demande juste de **redémarrer Discord** pour l'appliquer. Plus besoin de re-cloner ou re-copier quoi que ce soit.
+
+- Ça ne remplace tes fichiers que si la version distante est **plus récente** (tes modifs locales à la même version ne sont pas écrasées).
+- Pour forcer la vérification : commande **`/roxupdate`**.
+- Pour désactiver : décoche `autoUpdate` dans les réglages.
+
 ## Sécurité (l'essentiel)
 
 - Chiffrement **AES‑256‑GCM + PBKDF2**, avec une clé dérivée par **ECDH P‑256**. Discord ne voit qu'une image.

@@ -4,10 +4,61 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import { spawn } from "child_process";
 import type { IpcMainInvokeEvent } from "electron";
-import { readFileSync } from "fs";
+import { existsSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import { pathToFileURL } from "url";
+
+const RAW_BASE = "https://raw.githubusercontent.com/Karmahghosting/RoxifyCrypt/main/roxifyCrypt";
+
+function pluginDir(): string | null {
+    try {
+        const p = join(__dirname, "..", "src", "userplugins", "roxifyCrypt");
+        return existsSync(join(p, "index.tsx")) ? p : null;
+    } catch {
+        return null;
+    }
+}
+
+function buildRepo(repo: string): Promise<boolean> {
+    return new Promise(resolve => {
+        try {
+            const child = spawn("pnpm", ["build"], { cwd: repo, shell: true, windowsHide: true });
+            let done = false;
+            const finish = (ok: boolean) => { if (!done) { done = true; resolve(ok); } };
+            child.on("error", () => finish(false));
+            child.on("exit", code => finish(code === 0));
+            setTimeout(() => finish(false), 180000);
+        } catch {
+            resolve(false);
+        }
+    });
+}
+
+export async function updatePlugin(
+    _: IpcMainInvokeEvent,
+    currentVersion: number
+): Promise<{ updated: boolean; current: number; remote?: number; built?: boolean; error?: string; }> {
+    try {
+        const dir = pluginDir();
+        if (!dir) return { updated: false, current: currentVersion, error: "Dossier du plugin introuvable (installe-le dans Vencord/src/userplugins/roxifyCrypt)." };
+        const bust = `?t=${Date.now()}`;
+        const idx = await (await fetch(RAW_BASE + "/index.tsx" + bust)).text();
+        const m = idx.match(/PLUGIN_VERSION\s*=\s*(\d+)/);
+        const remote = m ? Number(m[1]) : 0;
+        if (!remote || !idx.includes("definePlugin")) return { updated: false, current: currentVersion, error: "Réponse GitHub invalide." };
+        if (remote <= currentVersion) return { updated: false, current: currentVersion, remote };
+        const nat = await (await fetch(RAW_BASE + "/native.ts" + bust)).text();
+        if (!nat.includes("encodeBinaryToPng") && !nat.includes("loadRoxify")) return { updated: false, current: currentVersion, remote, error: "native.ts distant invalide." };
+        writeFileSync(join(dir, "index.tsx"), idx, "utf8");
+        writeFileSync(join(dir, "native.ts"), nat, "utf8");
+        const built = await buildRepo(join(dir, "..", "..", ".."));
+        return { updated: true, current: currentVersion, remote, built };
+    } catch (e: any) {
+        return { updated: false, current: currentVersion, error: String(e?.message ?? e) };
+    }
+}
 
 const dynamicImport: (url: string) => Promise<any> = new Function("u", "return import(u);") as any;
 const moduleCache = new Map<string, Promise<any>>();

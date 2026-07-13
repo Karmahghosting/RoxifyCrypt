@@ -57,6 +57,7 @@ const PAYLOAD_RE = /^rox_([A-Za-z0-9_-]{80,120})\.png$/;
 const HS_RE = /^roxhs_([ir])_([A-Za-z0-9_-]{80,120})\.png$/;
 const TEXT_NAME = "__roxtext__";
 const TINY_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=";
+const PLUGIN_VERSION = 20260713;
 
 const HS_THROTTLE_MS = 60_000;
 const HS_NAG_AFTER_MS = 15_000;
@@ -118,6 +119,12 @@ const settings = definePluginSettings({
     optimisticSending: {
         type: OptionType.BOOLEAN,
         description: "Afficher tout de suite ton message en gris (« en cours d'envoi »), comme Discord, pendant le chiffrement.",
+        default: true,
+        restartNeeded: false,
+    },
+    autoUpdate: {
+        type: OptionType.BOOLEAN,
+        description: "Vérifier et installer automatiquement les mises à jour de RoxifyCrypt depuis GitHub au démarrage (redémarrage de Discord requis pour appliquer).",
         default: true,
         restartNeeded: false,
     },
@@ -202,6 +209,7 @@ const secretCache = new Map<string, string>();
 const decodeCache = new Map<string, View>();
 
 let epoch = 0;
+let autoUpdated = false;
 const epochListeners = new Set<() => void>();
 function bumpEpoch() {
     epoch++;
@@ -893,6 +901,26 @@ export default definePlugin({
                 });
             },
         },
+        {
+            name: "roxupdate",
+            description: "Vérifie et installe la dernière version de RoxifyCrypt depuis GitHub",
+            inputType: ApplicationCommandInputType.BUILT_IN,
+            options: [],
+            execute: async (_args, ctx) => {
+                sendBotMessage(ctx.channel.id, { content: "🔄 Recherche d'une mise à jour RoxifyCrypt…" });
+                try {
+                    const r = await getNative().updatePlugin(PLUGIN_VERSION);
+                    const msg = r.error
+                        ? `⚠️ Échec : ${r.error}`
+                        : !r.updated
+                            ? `✅ Déjà à jour (v${r.current}${r.remote ? `, distant v${r.remote}` : ""}).`
+                            : `⬆️ v${r.current} → v${r.remote} téléchargée${r.built ? " et compilée" : " (compile avec pnpm build)"}. **Redémarre Discord** pour l'appliquer.`;
+                    sendBotMessage(ctx.channel.id, { content: msg });
+                } catch (e: any) {
+                    sendBotMessage(ctx.channel.id, { content: `⚠️ ${String(e?.message ?? e)}` });
+                }
+            },
+        },
     ],
 
     flux: {
@@ -1037,6 +1065,19 @@ export default definePlugin({
         await loadState();
         installStyle();
         applyDisplayMode();
+
+        if (settings.store.autoUpdate && !autoUpdated) {
+            autoUpdated = true;
+            (async () => {
+                try {
+                    const r = await getNative().updatePlugin(PLUGIN_VERSION);
+                    if (r?.updated) showToast(`RoxifyCrypt : mise à jour v${r.remote} téléchargée${r.built ? " et compilée" : " (fais pnpm build)"}. Redémarre Discord pour l'appliquer.`, Toasts.Type.SUCCESS);
+                } catch (e) {
+                    console.error("[RoxifyCrypt] auto-update failed:", e);
+                }
+            })();
+        }
+
         try {
             await ensureIdentity();
         } catch (e) {
