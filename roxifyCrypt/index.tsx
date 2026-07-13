@@ -35,7 +35,6 @@ function clearComposer(channelId: string) {
 const MEDIA_IMG_RE = /\.(gif|png|jpe?g|webp|avif|bmp)(?:[?#]|$)/i;
 const MEDIA_VID_RE = /\.(mp4|webm|mov)(?:[?#]|$)/i;
 const MEDIA_HOST_RE = /^https?:\/\/(?:[a-z0-9-]+\.)*(?:media\d*\.tenor\.com|c\.tenor\.com|media\d*\.giphy\.com|cdn\.discordapp\.com|media\.discordapp\.net|i\.imgur\.com)\//i;
-const PAGE_HOST_RE = /^https?:\/\/(?:www\.)?(?:tenor\.com\/view\/|giphy\.com\/gifs\/|giphy\.com\/embed\/)/i;
 
 const C_TEXT = "var(--text-default, var(--text-normal, var(--header-primary, currentColor)))";
 const C_MUTED = "var(--text-muted, var(--text-tertiary, var(--text-secondary, currentColor)))";
@@ -666,23 +665,31 @@ function RoxAccessory({ message }: { message: any; }) {
         if (state?.status !== "text") return;
         const u = singleUrl(state.text);
         if (!u) return;
-        const direct = directMedia(u);
-        if (direct) { setMedia(direct); return; }
-        if (!PAGE_HOST_RE.test(u)) return;
         let alive = true;
+        let blobUrl: string | undefined;
         (async () => {
             try {
                 const n = optionalNative();
-                if (!n?.resolveMedia) return;
-                const r = await n.resolveMedia(u);
-                if (!alive || !r) return;
-                const gif = r.image && MEDIA_IMG_RE.test(r.image) ? r.image : undefined;
-                if (gif) setMedia({ kind: "image", url: gif });
-                else if (r.video) setMedia({ kind: "video", url: r.video });
-                else if (r.image) setMedia({ kind: "image", url: r.image });
+                if (!n) return;
+                let target = directMedia(u) ? u : undefined;
+                if (!target && n.resolveMedia) {
+                    const r = await n.resolveMedia(u);
+                    if (r) target = (r.image && MEDIA_IMG_RE.test(r.image)) ? r.image : (r.video || r.image);
+                }
+                if (!alive || !target) return;
+                if (n.fetchMedia) {
+                    const f = await n.fetchMedia(target);
+                    if (!alive) return;
+                    if (f?.data) {
+                        blobUrl = URL.createObjectURL(new Blob([f.data as BlobPart], { type: f.type }));
+                        setMedia({ kind: f.type.startsWith("video") ? "video" : "image", url: blobUrl });
+                        return;
+                    }
+                }
+                if (alive) setMedia({ kind: MEDIA_VID_RE.test(target) ? "video" : "image", url: target });
             } catch { void 0; }
         })();
-        return () => { alive = false; };
+        return () => { alive = false; if (blobUrl) URL.revokeObjectURL(blobUrl); };
     }, [state]);
 
     useEffect(() => { applyDisplayMode(); });
@@ -707,12 +714,6 @@ function RoxAccessory({ message }: { message: any; }) {
                             : <img src={media.url} alt="" style={mediaStyle} />}
                     </div>
                 );
-            }
-            const asUrl = singleUrl(state.text);
-            if (asUrl && PAGE_HOST_RE.test(asUrl)) {
-                return clean
-                    ? <div style={{ padding: "2px 0" }}><a href={asUrl} style={{ color: C_LINK }}>{asUrl}</a></div>
-                    : box(<>🔓 <a href={asUrl} style={{ color: C_LINK }}>{asUrl}</a></>);
             }
             if (clean) {
                 return <div style={{ padding: "2px 0", color: C_TEXT, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{Parser.parse(state.text)}</div>;

@@ -92,3 +92,20 @@ export async function resolveMedia(
         return {};
     }
 }
+
+export async function fetchMedia(
+    _: IpcMainInvokeEvent,
+    url: string
+): Promise<{ type: string; data: Uint8Array; } | null> {
+    try {
+        const res = await fetch(url, { headers: { "user-agent": "Mozilla/5.0 (compatible; RoxifyCrypt)" } });
+        if (!res.ok) return null;
+        const type = (res.headers.get("content-type") ?? "").split(";")[0].trim();
+        if (!/^(image|video)\//i.test(type)) return null;
+        const buf = Buffer.from(await res.arrayBuffer());
+        if (buf.length > 30 * 1024 * 1024) return null;
+        return { type, data: new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength) };
+    } catch {
+        return null;
+    }
+}
