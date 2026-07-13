@@ -11,11 +11,41 @@ import definePlugin, { OptionType, PluginNative } from "@utils/types";
 import { findByPropsLazy, findLazy } from "@webpack";
 import { ChannelStore, DraftType, MessageStore, Parser, React, RestAPI, showToast, SnowflakeUtils, Toasts, UploadManager, useEffect, UserStore, useState } from "@webpack/common";
 
-const Native = VencordNative.pluginHelpers.RoxifyCrypt as PluginNative<typeof import("./native")>;
+type RoxNative = PluginNative<typeof import("./native")>;
+function optionalNative(): RoxNative | undefined {
+    return (VencordNative as any)?.pluginHelpers?.RoxifyCrypt;
+}
+function getNative(): RoxNative {
+    const n = optionalNative();
+    if (!n) throw new Error("NATIVE_NOT_LOADED");
+    return n;
+}
 
 const CloudUpload = findLazy((m: any) => m?.prototype?.trackUploadFinished);
 const ComponentDispatch = findByPropsLazy("dispatchToLastSubscribed");
 const UploadStore = findByPropsLazy("getUploads");
+const DraftManager = findByPropsLazy("clearDraft", "saveDraft");
+
+function clearComposer(channelId: string) {
+    try { DraftManager.clearDraft(channelId, DraftType.ChannelMessage); } catch { void 0; }
+    try { ComponentDispatch.dispatchToLastSubscribed("CLEAR_TEXT"); } catch { void 0; }
+}
+
+const MEDIA_IMG_RE = /\.(gif|png|jpe?g|webp|avif|bmp)(?:[?#]|$)/i;
+const MEDIA_VID_RE = /\.(mp4|webm|mov)(?:[?#]|$)/i;
+const MEDIA_HOST_RE = /^https?:\/\/(?:[a-z0-9-]+\.)*(?:media\d*\.tenor\.com|c\.tenor\.com|media\d*\.giphy\.com|cdn\.discordapp\.com|media\.discordapp\.net|i\.imgur\.com)\//i;
+const PAGE_HOST_RE = /^https?:\/\/(?:www\.)?(?:tenor\.com\/view\/|giphy\.com\/gifs\/|giphy\.com\/embed\/)/i;
+
+function singleUrl(text: string): string | null {
+    const t = text.trim();
+    return /^https?:\/\/\S+$/i.test(t) ? t : null;
+}
+function directMedia(url: string): { kind: "image" | "video"; url: string; } | null {
+    if (MEDIA_VID_RE.test(url)) return { kind: "video", url };
+    if (MEDIA_IMG_RE.test(url)) return { kind: "image", url };
+    if (MEDIA_HOST_RE.test(url)) return { kind: "image", url };
+    return null;
+}
 
 const LEGACY_NAME = "roxmsg.png";
 const PAYLOAD_RE = /^rox_([A-Za-z0-9_-]{80,120})\.png$/;
@@ -71,7 +101,41 @@ const settings = definePluginSettings({
         default: true,
         restartNeeded: false,
     },
+    displayMode: {
+        type: OptionType.SELECT,
+        description: "Comment afficher les messages déchiffrés à la réception.",
+        options: [
+            { label: "RoxifyCrypt : montre l'image roxify et les cadenas 🔓", value: "roxify", default: true },
+            { label: "Discret : comme un message Discord normal (image roxify masquée, sans cadenas)", value: "clean" },
+        ],
+        restartNeeded: false,
+    },
 });
+
+const HIDE_CSS = `
+html.roxcrypt-clean img[src*="/rox_"],
+html.roxcrypt-clean img[src*="/roxhs_"] { display: none !important; }
+html.roxcrypt-clean [class*="messageAttachment"]:has(img[src*="/rox_"]),
+html.roxcrypt-clean [class*="messageAttachment"]:has(img[src*="/roxhs_"]),
+html.roxcrypt-clean [class*="imageContainer"]:has(img[src*="/rox_"]),
+html.roxcrypt-clean [class*="imageContainer"]:has(img[src*="/roxhs_"]) { display: none !important; }
+`;
+let styleEl: HTMLStyleElement | null = null;
+function installStyle() {
+    if (styleEl || typeof document === "undefined") return;
+    styleEl = document.createElement("style");
+    styleEl.id = "roxifycrypt-style";
+    styleEl.textContent = HIDE_CSS;
+    document.head.appendChild(styleEl);
+}
+function removeStyle() {
+    styleEl?.remove();
+    styleEl = null;
+    document.documentElement.classList.remove("roxcrypt-clean");
+}
+function applyDisplayMode() {
+    document.documentElement.classList.toggle("roxcrypt-clean", settings.store.displayMode === "clean");
+}
 
 const KEYS_KEY = "RoxifyCrypt_channelKeys";
 const IDENTITY_KEY = "RoxifyCrypt_identity";
@@ -317,7 +381,7 @@ async function payloadName(): Promise<string> {
 }
 
 async function encryptAndSend(channelId: string, name: string, data: Uint8Array, key: string) {
-    const png = await Native.encode(requirePath(), name, data, key);
+    const png = await getNative().encode(requirePath(), name, data, key);
     const { filename, uploadedFilename } = await uploadImage(channelId, png, await payloadName());
     await postAttachment(channelId, filename, uploadedFilename);
 }
@@ -333,7 +397,7 @@ async function encryptAndSendFile(channelId: string, file: File, key: string) {
 
 async function encryptAndEditText(channelId: string, messageId: string, text: string, key: string) {
     const data = new TextEncoder().encode(text);
-    const png = await Native.encode(requirePath(), TEXT_NAME, data, key);
+    const png = await getNative().encode(requirePath(), TEXT_NAME, data, key);
     const { filename, uploadedFilename } = await uploadImage(channelId, png, await payloadName());
     await RestAPI.patch({
         url: `/channels/${channelId}/messages/${messageId}`,
@@ -479,10 +543,12 @@ function RoxAccessory({ message }: { message: any; }) {
     const att = hs ? null : findPayload(message);
     const channelId = channelOf(message);
     const roxifyPath = settings.store.roxifyPath?.trim();
+    const clean = settings.store.displayMode === "clean";
     const cacheKey = att ? `${att.id}:${currentEpoch}` : "";
 
     const [state, setState] = useState<View | undefined>(() => (cacheKey ? decodeCache.get(cacheKey) : undefined));
     const [url, setUrl] = useState<string | undefined>();
+    const [media, setMedia] = useState<{ kind: "image" | "video"; url: string; } | undefined>();
 
     useEffect(() => {
         if (!att) return;
@@ -511,7 +577,7 @@ function RoxAccessory({ message }: { message: any; }) {
             try {
                 const res = await fetch(att.url);
                 const buf = new Uint8Array(await res.arrayBuffer());
-                const { name, data } = await Native.decode(roxifyPath, buf, key);
+                const { name, data } = await getNative().decode(roxifyPath, buf, key);
                 const view: View = name === TEXT_NAME
                     ? { status: "text", text: new TextDecoder().decode(data) }
                     : { status: "file", name: name || "fichier.bin", data };
@@ -519,7 +585,9 @@ function RoxAccessory({ message }: { message: any; }) {
                 if (alive) setState(view);
             } catch (e: any) {
                 const msg = String(e?.message ?? e);
-                const view: View = /passphrase/i.test(msg) ? { status: "badkey" } : { status: "error", error: msg };
+                const view: View = /passphrase/i.test(msg) ? { status: "badkey" }
+                    : /NATIVE_NOT_LOADED/.test(msg) ? { status: "error", error: "module natif non chargé. Ferme et rouvre complètement Discord (pas seulement Ctrl+R)." }
+                    : { status: "error", error: msg };
                 decodeCache.set(cacheKey, view);
                 if (alive) setState(view);
             }
@@ -534,17 +602,62 @@ function RoxAccessory({ message }: { message: any; }) {
         return () => URL.revokeObjectURL(u);
     }, [state]);
 
+    useEffect(() => {
+        setMedia(undefined);
+        if (state?.status !== "text") return;
+        const u = singleUrl(state.text);
+        if (!u) return;
+        const direct = directMedia(u);
+        if (direct) { setMedia(direct); return; }
+        if (!PAGE_HOST_RE.test(u)) return;
+        let alive = true;
+        (async () => {
+            try {
+                const n = optionalNative();
+                if (!n?.resolveMedia) return;
+                const r = await n.resolveMedia(u);
+                if (!alive || !r) return;
+                const gif = r.image && MEDIA_IMG_RE.test(r.image) ? r.image : undefined;
+                if (gif) setMedia({ kind: "image", url: gif });
+                else if (r.video) setMedia({ kind: "video", url: r.video });
+                else if (r.image) setMedia({ kind: "image", url: r.image });
+            } catch { void 0; }
+        })();
+        return () => { alive = false; };
+    }, [state]);
+
+    useEffect(() => { applyDisplayMode(); });
+
     const box = (children: any, color = "var(--text-muted)") => (
         <div style={{ color, fontSize: "0.9rem", padding: "2px 0", display: "flex", gap: "6px", alignItems: "baseline" }}>
             {children}
         </div>
     );
 
-    if (hs) return box(<>🤝 <i>RoxifyCrypt : clé publique échangée</i></>);
+    if (hs) return clean ? null : box(<>🤝 <i>RoxifyCrypt : clé publique échangée</i></>);
     if (!att) return null;
 
     switch (state?.status) {
-        case "text":
+        case "text": {
+            if (media) {
+                const mediaStyle = { maxWidth: "400px", maxHeight: "300px", borderRadius: "8px", display: "block" } as const;
+                return (
+                    <div style={{ padding: "2px 0" }}>
+                        {media.kind === "video"
+                            ? <video src={media.url} autoPlay loop muted playsInline style={mediaStyle} />
+                            : <img src={media.url} alt="" style={mediaStyle} />}
+                    </div>
+                );
+            }
+            const asUrl = singleUrl(state.text);
+            if (asUrl && PAGE_HOST_RE.test(asUrl)) {
+                return clean
+                    ? <div style={{ padding: "2px 0" }}><a href={asUrl} style={{ color: "var(--text-link)" }}>{asUrl}</a></div>
+                    : box(<>🔓 <a href={asUrl} style={{ color: "var(--text-link)" }}>{asUrl}</a></>);
+            }
+            if (clean) {
+                return <div style={{ padding: "2px 0", color: "var(--text-normal)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{Parser.parse(state.text)}</div>;
+            }
             return box(
                 <>
                     <span style={{ flex: "0 0 auto" }}>🔓</span>
@@ -553,6 +666,7 @@ function RoxAccessory({ message }: { message: any; }) {
                     </span>
                 </>,
             );
+        }
         case "file":
             if (!url) return box(<>🔓 <i>chargement…</i></>);
             return isImageName(state.name)
@@ -561,12 +675,14 @@ function RoxAccessory({ message }: { message: any; }) {
                         <img src={url} alt={state.name} style={{ maxWidth: "400px", maxHeight: "300px", borderRadius: "8px", display: "block" }} />
                     </div>
                 )
-                : box(
-                    <>
-                        <span style={{ flex: "0 0 auto" }}>🔓📎</span>
-                        <a href={url} download={state.name} style={{ color: "var(--text-link)" }}>{state.name}</a>
-                    </>,
-                );
+                : clean
+                    ? <div style={{ padding: "2px 0" }}><a href={url} download={state.name} style={{ color: "var(--text-link)" }}>📎 {state.name}</a></div>
+                    : box(
+                        <>
+                            <span style={{ flex: "0 0 auto" }}>🔓📎</span>
+                            <a href={url} download={state.name} style={{ color: "var(--text-link)" }}>{state.name}</a>
+                        </>,
+                    );
         case "loading":
             return box(<>🔓 <i>déchiffrement…</i></>);
         case "waiting":
@@ -764,7 +880,7 @@ export default definePlugin({
             if (text || files.length) {
                 enqueuePending(channelId, { text: text || undefined, files: files.length ? files : undefined });
                 if (files.length) UploadManager.clearAll(channelId, DraftType.ChannelMessage);
-                try { ComponentDispatch.dispatchToLastSubscribed("CLEAR_TEXT"); } catch { void 0; }
+                clearComposer(channelId);
             }
 
             const alreadyTried = lastHsAt.has(channelId);
@@ -806,9 +922,7 @@ export default definePlugin({
                 showToast("RoxifyCrypt : échec du chiffrement, message NON envoyé", Toasts.Type.FAILURE);
                 console.error("[RoxifyCrypt] text encrypt failed:", e);
             });
-            try { ComponentDispatch.dispatchToLastSubscribed("CLEAR_TEXT"); } catch {
-                void 0;
-            }
+            clearComposer(channelId);
             handled = true;
         }
 
@@ -841,6 +955,8 @@ export default definePlugin({
 
     async start() {
         await loadState();
+        installStyle();
+        applyDisplayMode();
         try {
             await ensureIdentity();
         } catch (e) {
@@ -854,7 +970,7 @@ export default definePlugin({
             return;
         }
         try {
-            const r = await Native.probe(path);
+            const r = await getNative().probe(path);
             if (!r.ok) showToast("RoxifyCrypt : roxify introuvable (" + (r.error ?? "?") + ")", Toasts.Type.FAILURE);
         } catch (e) {
             console.error("[RoxifyCrypt] probe failed:", e);
@@ -866,5 +982,6 @@ export default definePlugin({
         secretCache.clear();
         epochListeners.clear();
         pendingByChannel.clear();
+        removeStyle();
     },
 });

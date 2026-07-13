@@ -48,7 +48,11 @@ Le réglage `roxifyPath` est déjà rempli avec `C:\roxify-lib\node_modules\roxi
 
 Le **tout premier** message à quelqu'un déclenche l'échange de clés (une seule fois) : tu tapes, le champ se vide, l'échange se fait tout seul en une ou deux secondes, et ton message part chiffré automatiquement juste après. Ensuite, tout est instantané.
 
-Ça marche aussi pour les **images / fichiers** et pour l'**édition** d'un message.
+Ça marche aussi pour les **images / fichiers**, les **GIF** (Tenor, liens directs) et l'**édition** d'un message.
+
+**Deux styles d'affichage** (réglage `displayMode`) :
+- **RoxifyCrypt** : tu vois la petite image roxify et les cadenas 🔓.
+- **Discret** : le contenu déchiffré s'affiche comme un message Discord normal, l'image roxify est masquée.
 
 ### Commandes utiles
 

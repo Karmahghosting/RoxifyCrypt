@@ -73,3 +73,22 @@ export async function decode(
     const name: string = res?.meta?.name ?? res?.files?.[0]?.name ?? "";
     return { name, data: new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength) };
 }
+
+export async function resolveMedia(
+    _: IpcMainInvokeEvent,
+    url: string
+): Promise<{ image?: string; video?: string; }> {
+    try {
+        const res = await fetch(url, { headers: { "user-agent": "Mozilla/5.0 (compatible; RoxifyCrypt)" } });
+        const html = await res.text();
+        const unescape = (s: string) => s.replace(/&amp;/g, "&").replace(/&#x2F;/gi, "/").replace(/&#47;/g, "/").replace(/&quot;/g, "\"");
+        const meta = (prop: string): string | undefined => {
+            const m = html.match(new RegExp(`<meta[^>]+property=["']og:${prop}["'][^>]+content=["']([^"']+)["']`, "i"))
+                ?? html.match(new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:${prop}["']`, "i"));
+            return m ? unescape(m[1]) : undefined;
+        };
+        return { image: meta("image"), video: meta("video") };
+    } catch {
+        return {};
+    }
+}
