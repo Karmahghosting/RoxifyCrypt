@@ -29,8 +29,8 @@ const HS_NAG_AFTER_MS = 15_000;
 const settings = definePluginSettings({
     roxifyPath: {
         type: OptionType.STRING,
-        description: "Chemin ABSOLU vers le dossier du module roxify (contient package.json + dist/). Ex: C:\\roxify-lib\\node_modules\\roxify.",
-        default: "",
+        description: "Chemin ABSOLU vers le dossier du module roxify. Par défaut C:\\roxify-lib\\node_modules\\roxify : si tu as suivi le README, ne change rien.",
+        default: "C:\\roxify-lib\\node_modules\\roxify",
         restartNeeded: false,
     },
     keyMode: {
