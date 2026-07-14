@@ -7,7 +7,41 @@ Plugin Vencord qui chiffre **automatiquement** tes messages et fichiers Discord 
 
 ---
 
-## Installation
+## Installation automatique (recommandé)
+
+Un seul script fait tout : Vencord, le module roxify, le plugin, la compilation et l'injection.
+Il te faut juste **Node.js 18+** et **git** installés.
+
+**Windows** (PowerShell) :
+
+```powershell
+irm https://raw.githubusercontent.com/Karmahghosting/RoxifyCrypt/main/install.ps1 | iex
+```
+
+**Linux / macOS** :
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Karmahghosting/RoxifyCrypt/main/install.sh -o roxify-install.sh
+bash roxify-install.sh
+```
+
+Le script te demande de choisir ton Discord (Stable / Canary) à la fin. Ensuite : **redémarre complètement Discord**, puis `Paramètres → Vencord → Plugins → RoxifyCrypt` et **active-le**.
+
+Options utiles (si tu as déjà Vencord ailleurs, ou si tu ne veux pas injecter tout de suite) :
+
+```powershell
+.\install.ps1 -VencordDir "D:\dev\Vencord" -RoxifyLib "D:\roxify-lib" -SkipInject
+```
+
+```bash
+./install.sh --vencord-dir ~/dev/Vencord --roxify-lib ~/roxify-lib --skip-inject
+```
+
+> Sous **Linux / macOS**, le module roxify n'est pas dans `C:\roxify-lib` : le script affiche à la fin le chemin exact à recopier dans le réglage `roxifyPath` du plugin.
+
+---
+
+## Installation manuelle
 
 **1. Vencord depuis les sources** (les userplugins ne marchent que comme ça) :
 
@@ -56,8 +90,10 @@ Le **tout premier** message à quelqu'un déclenche l'échange de clés (une seu
 | Commande | Effet |
 |---|---|
 | `/roxid` | Affiche les empreintes à comparer hors Discord (pour vérifier qu'il n'y a pas d'espion). |
-| `/roxplain` | Envoie en clair dans ce salon (si l'autre n'a pas le plugin). |
+| `/roxplain` | Coupe (ou remet) le chiffrement **partout**. Réglage global, conservé après redémarrage. |
 | `/roxkey-show` | Explique quelle clé est active ici. |
+
+Le chiffrement se règle **globalement** (réglage `autoEncrypt`, ou `/roxplain`), et pas salon par salon : si tu le coupes, il reste coupé après redémarrage de Discord. Le réglage `scope` décide où ça chiffre : MP seulement (défaut) ou tous les salons.
 
 ## Sécurité (l'essentiel)
 

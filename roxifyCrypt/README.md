@@ -6,7 +6,24 @@ Plugin Vencord qui chiffre **automatiquement** tes messages et fichiers Discord 
 
 ---
 
-## Installation
+## Installation automatique (recommandé)
+
+**Windows** (PowerShell) :
+
+```powershell
+irm https://raw.githubusercontent.com/Karmahghosting/RoxifyCrypt/main/install.ps1 | iex
+```
+
+**Linux / macOS** :
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Karmahghosting/RoxifyCrypt/main/install.sh -o roxify-install.sh
+bash roxify-install.sh
+```
+
+Le script installe Vencord, le module roxify, le plugin, compile et injecte. Il te faut seulement **Node.js 18+** et **git**.
+
+## Installation manuelle
 
 **1. Vencord depuis les sources** (les userplugins ne marchent que comme ça) :
 
@@ -59,13 +76,18 @@ Le **tout premier** message à quelqu'un déclenche l'échange de clés (une seu
 | Commande | Effet |
 |---|---|
 | `/roxid` | Affiche les empreintes à comparer hors Discord (pour vérifier qu'il n'y a pas d'espion). |
-| `/roxon` | Active le chiffrement dans CE salon (utile sur un serveur). |
-| `/roxplain` | Envoie en clair dans ce salon (si l'autre n'a pas le plugin). |
+| `/roxplain` | Coupe (ou remet) le chiffrement **partout**. Réglage global, conservé après redémarrage. |
 | `/roxkey-show` | Explique quelle clé est active ici. |
+
+### Activer ou couper le chiffrement
+
+C'est un **réglage global**, pas un réglage par salon : `autoEncrypt` dans les réglages du plugin, ou la commande `/roxplain` qui bascule ce même réglage. Une fois coupé, il le reste après redémarrage de Discord, et tes messages partent en clair partout.
+
+Le réglage `scope` décide **où** ça chiffre quand c'est actif : `MP et groupes seulement` (défaut) ou `Tous les salons`.
 
 ### Sur un serveur (beaucoup de monde)
 
-En MP, chaque conversation est chiffrée de bout en bout par ECDH (vraie sécurité). Sur un **serveur**, l'ECDH ne marche pas (impossible d'échanger une clé avec des centaines de gens). Fais **`/roxon`** dans le salon voulu : les messages y partent chiffrés et **tout le monde qui a le plugin les lit automatiquement**, zéro config.
+En MP, chaque conversation est chiffrée de bout en bout par ECDH (vraie sécurité). Sur un **serveur**, l'ECDH ne marche pas (impossible d'échanger une clé avec des centaines de gens). Mets `scope` sur **Tous les salons** : les messages y partent chiffrés et **tout le monde qui a le plugin les lit automatiquement**, zéro config.
 
 > ⚠️ Sur un serveur, c'est de l'**obfuscation**, pas une vraie confidentialité : la clé est dérivée du salon, donc n'importe qui ayant le plugin dans ce salon peut lire. Ça cache le contenu à Discord et aux gens sans le plugin, rien de plus. Pour de la vraie confidentialité à plusieurs, mets un `masterSecret` partagé (les réglages) que seuls tes membres connaissent.
 

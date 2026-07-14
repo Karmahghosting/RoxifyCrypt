@@ -57,7 +57,7 @@ const PAYLOAD_RE = /^rox_([A-Za-z0-9_-]{80,120})\.png$/;
 const HS_RE = /^roxhs_([ir])_([A-Za-z0-9_-]{80,120})\.png$/;
 const TEXT_NAME = "__roxtext__";
 const TINY_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=";
-const PLUGIN_VERSION = 20260713;
+const PLUGIN_VERSION = 20260714;
 
 const HS_THROTTLE_MS = 60_000;
 const HS_NAG_AFTER_MS = 15_000;
@@ -88,7 +88,7 @@ const settings = definePluginSettings({
     },
     scope: {
         type: OptionType.SELECT,
-        description: "Où chiffrer AUTOMATIQUEMENT. Les salons forcés via /roxkey sont toujours inclus.",
+        description: "Où chiffrer AUTOMATIQUEMENT quand le chiffrement est activé. Les salons forcés via /roxkey sont toujours inclus.",
         options: [
             { label: "MP et groupes seulement (recommandé)", value: "dm", default: true },
             { label: "Tous les salons (y compris serveurs)", value: "all" },
@@ -97,7 +97,7 @@ const settings = definePluginSettings({
     },
     autoEncrypt: {
         type: OptionType.BOOLEAN,
-        description: "Interrupteur général du chiffrement automatique à l'envoi.",
+        description: "Interrupteur GLOBAL du chiffrement à l'envoi. Décoché, tout part en clair partout. La commande /roxplain bascule ce même réglage.",
         default: true,
         restartNeeded: false,
     },
@@ -195,14 +195,10 @@ function clearOptimistic(nonce?: string) {
 const KEYS_KEY = "RoxifyCrypt_channelKeys";
 const IDENTITY_KEY = "RoxifyCrypt_identity";
 const PEERS_KEY = "RoxifyCrypt_peers";
-const PLAIN_KEY = "RoxifyCrypt_plainChannels";
-const ENCRYPT_KEY = "RoxifyCrypt_encryptChannels";
 const PENDING_HS_KEY = "RoxifyCrypt_pendingHandshakes";
 
 const channelKeys = new Map<string, string>();
 const peerKeys = new Map<string, string>();
-const plainChannels = new Set<string>();
-const encryptChannels = new Set<string>();
 const pendingHs = new Map<string, string>();
 const lastHsAt = new Map<string, number>();
 const secretCache = new Map<string, string>();
@@ -218,22 +214,16 @@ function bumpEpoch() {
 }
 
 async function loadState() {
-    const [keys, peers, plain, enc, hs] = await Promise.all([
+    const [keys, peers, hs] = await Promise.all([
         DataStore.get(KEYS_KEY) as Promise<Record<string, string> | undefined>,
         DataStore.get(PEERS_KEY) as Promise<Record<string, string> | undefined>,
-        DataStore.get(PLAIN_KEY) as Promise<string[] | undefined>,
-        DataStore.get(ENCRYPT_KEY) as Promise<string[] | undefined>,
         DataStore.get(PENDING_HS_KEY) as Promise<Record<string, string> | undefined>,
     ]);
     channelKeys.clear();
     peerKeys.clear();
-    plainChannels.clear();
-    encryptChannels.clear();
     pendingHs.clear();
     if (keys) for (const [k, v] of Object.entries(keys)) channelKeys.set(k, v);
     if (peers) for (const [k, v] of Object.entries(peers)) peerKeys.set(k, v);
-    if (plain) for (const c of plain) plainChannels.add(c);
-    if (enc) for (const c of enc) encryptChannels.add(c);
     if (hs) for (const [k, v] of Object.entries(hs)) pendingHs.set(k, v);
 }
 
@@ -242,12 +232,6 @@ async function persistKeys() {
 }
 async function persistPeers() {
     await DataStore.set(PEERS_KEY, Object.fromEntries(peerKeys));
-}
-async function persistPlain() {
-    await DataStore.set(PLAIN_KEY, [...plainChannels]);
-}
-async function persistEncrypt() {
-    await DataStore.set(ENCRYPT_KEY, [...encryptChannels]);
 }
 async function persistPendingHs() {
     await DataStore.set(PENDING_HS_KEY, Object.fromEntries(pendingHs));
@@ -814,8 +798,8 @@ export default definePlugin({
                 const own = channelKeys.get(channelId);
                 if (own) return sendBotMessage(channelId, { content: `🔑 Clé manuelle (/roxkey) : \`${own}\`` });
 
-                if (plainChannels.has(channelId))
-                    return sendBotMessage(channelId, { content: "📢 Salon en clair (`/roxplain` pour réactiver le chiffrement)." });
+                if (!settings.store.autoEncrypt)
+                    return sendBotMessage(channelId, { content: "📢 Chiffrement désactivé partout (`/roxplain` pour le réactiver)." });
 
                 if (settings.store.keyMode === "auto") {
                     const peer = dmPeerId(channelId);
@@ -868,36 +852,18 @@ export default definePlugin({
         },
         {
             name: "roxplain",
-            description: "Active/désactive l'envoi EN CLAIR dans CE salon (échappatoire si le correspondant n'a pas le plugin)",
+            description: "Active/désactive le chiffrement PARTOUT (réglage global, conservé après redémarrage)",
             inputType: ApplicationCommandInputType.BUILT_IN,
             options: [],
             execute: async (_args, ctx) => {
                 const channelId = ctx.channel.id;
-                const on = plainChannels.has(channelId);
-                if (on) plainChannels.delete(channelId);
-                else { plainChannels.add(channelId); encryptChannels.delete(channelId); }
-                await Promise.all([persistPlain(), persistEncrypt()]);
+                const wasOn = settings.store.autoEncrypt;
+                settings.store.autoEncrypt = !wasOn;
                 bumpEpoch();
                 sendBotMessage(channelId, {
-                    content: on
-                        ? "🔐 Chiffrement RoxifyCrypt réactivé dans ce salon."
-                        : "📢 Ce salon envoie désormais **en clair**. Refais `/roxplain` pour rechiffrer.",
-                });
-            },
-        },
-        {
-            name: "roxon",
-            description: "Active le chiffrement automatique dans CE salon, même sur un serveur (obfuscation : tout le monde avec le plugin lit)",
-            inputType: ApplicationCommandInputType.BUILT_IN,
-            options: [],
-            execute: async (_args, ctx) => {
-                const channelId = ctx.channel.id;
-                plainChannels.delete(channelId);
-                encryptChannels.add(channelId);
-                await Promise.all([persistPlain(), persistEncrypt()]);
-                bumpEpoch();
-                sendBotMessage(channelId, {
-                    content: "🔐 Chiffrement activé dans ce salon. Toute personne ayant RoxifyCrypt y lira les messages.\n⚠️ **Obfuscation** : ça cache le contenu à Discord et aux gens sans le plugin, mais ce n'est PAS une vraie confidentialité (le plugin est public). `/roxplain` pour repasser en clair.",
+                    content: wasOn
+                        ? "📢 Chiffrement **désactivé partout**. Tes messages partent en clair, dans tous les salons.\nRefais `/roxplain` pour le réactiver."
+                        : "🔐 Chiffrement **réactivé partout** (MP, et serveurs si le réglage « Où chiffrer » est sur tous les salons).",
                 });
             },
         },
@@ -960,13 +926,12 @@ export default definePlugin({
 
     async onBeforeMessageSend(channelId: string, message: { content: string; }) {
         if (!settings.store.autoEncrypt) return;
-        if (plainChannels.has(channelId)) return;
-        if (!channelKeys.has(channelId) && !encryptChannels.has(channelId) && !channelAllowed(channelId)) return;
+        if (!channelKeys.has(channelId) && !channelAllowed(channelId)) return;
 
         const key = await resolveKey(channelId);
 
         if (!key) {
-            const peer = settings.store.keyMode === "auto" && !plainChannels.has(channelId) ? dmPeerId(channelId) : null;
+            const peer = settings.store.keyMode === "auto" ? dmPeerId(channelId) : null;
             if (!peer) return;
 
             if (!settings.store.roxifyPath?.trim()) {
@@ -995,7 +960,7 @@ export default definePlugin({
 
             if (alreadyTried && waited > HS_NAG_AFTER_MS) {
                 sendBotMessage(channelId, {
-                    content: "🤝 Toujours aucune réponse de ton correspondant : il est hors ligne, ou RoxifyCrypt n'est pas installé chez lui.\nTon message reste **en file d'attente chiffrée** et partira automatiquement dès qu'il sera joignable.\n• `/roxplain` pour l'envoyer en clair à la place.",
+                    content: "🤝 Toujours aucune réponse de ton correspondant : il est hors ligne, ou RoxifyCrypt n'est pas installé chez lui.\nTon message reste **en file d'attente chiffrée** et partira automatiquement dès qu'il sera joignable.\n• `/roxplain` coupe le chiffrement **partout** si tu préfères écrire en clair.",
                 });
             } else {
                 showToast("RoxifyCrypt : échange de clés en cours… ton message partira chiffré tout seul.", Toasts.Type.MESSAGE);
